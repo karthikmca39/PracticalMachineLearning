@@ -1,0 +1,138 @@
+---
+title: "ParcticalMachineLearning-Work"
+author: "KARTHIK Theivendran"
+date: "21 July 2018"
+output: html_document
+---
+
+The current document explains the analysis performed with regarding to the Prediction Assignment to the Practical Machine Learning . 
+
+My approach to this assignment would be the following:
+
+cleaning of the original dataset;
+cross validations;
+split into training/testing datasets
+applying several models on the training set
+evaluating: comparing results and accuracy on the testing set
+choosing a model;
+applying the model to the 20 test cases.
+
+Here is the code for reading the data into R
+
+```{r}
+urltrain<-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+urltest<-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+download.file(url = urltrain, destfile = "./pml-training.csv")
+download.file(url = urltest, destfile = "./pml-testing.csv")
+training<-read.csv("./pml-training.csv", na.strings = "NA")
+testing<-read.csv("./pml-testing.csv", na.strings = "NA")
+```
+
+```{r}
+dim(training)
+```
+
+Cleaning the data :
+Some of the columns have a lot of Not Applicable values, and some of them have a lot of zeros. We will create a function which will show us which colums have more than 50% of missing and zero values, so that we can discard them from our model.
+
+```{r}
+subss<-as.numeric()
+out_of_subs<-as.numeric()
+for (i in 1:ncol(training)){
+  x <- sum(training[,i]=="")
+  y <- sum(is.na(training[,i]))
+  z <- length(training[,i])
+  if (is.na(x) == TRUE){x<-0}
+  if ((x+y)/z < 0.5){
+    subss[length(subss)+1]<-i
+  }
+  rm(x,y,z)
+}
+```
+
+We willremove the first five columns, since they contain personal information or information irrelevant to the model.
+
+```{r}
+subss<-subss[-(1:5)]
+```
+
+Finally we subset the original data to get a clean dataset with less columns.
+
+```{r}
+dataset<-training[,subss]
+```
+Splitting the original dataset
+The next task is to divide the training dataset provided into two subsets (70% and 30%). One of them will be for building our models and the other will be for testing purposes, before we apply the selected model to the 20 cases. For the purposes of reproducibility of this analysis, we set the seed a particular seed.
+```{r}
+set.seed(11111)
+library(caret)
+inTrain <- createDataPartition(y=dataset$classe, p=0.7, list=FALSE)
+intraining <- dataset[inTrain,]
+intesting <- dataset[-inTrain,]
+```
+
+Now we will apply three models to predict the "class" variable with all the other variables. The first model will be the Random Forest model.
+
+```{r}
+library(randomForest)
+mod_rft<-randomForest(classe~., data = intraining)
+```
+The second model will be Classification Tree.
+```{r}
+mod_ct<-train(classe ~ ., data = intraining, method = "rpart")
+```
+
+The third model will be Linear Discriminant Analysis.
+```{r}
+mod_lda<-train(classe ~ ., data = intraining, method = "lda")
+```
+
+And last but not least we will stack the predictions together using Random Forests again to get a combined model We will perform this by applying the three models to the testing dataset and predict the "classe" variable with the results.
+
+```{r}
+pred_rft<-predict(mod_rft, intesting)
+pred_ct<-predict(mod_ct, intesting)
+pred_lda<-predict(mod_lda, intesting)
+predDF<-data.frame(pred_rft, pred_ct, pred_lda, classe=intesting$classe)
+combinedModel<-randomForest(classe~., data=predDF)
+pred_combined<-predict(combinedModel, intesting)
+```
+Out of Sample Error
+Now that we have all our models set and running, let's compare the results against the actual values to verify the Out of Sample Error.
+```{r}
+names<-c("Random Forest", "Classification Tree", "Linear Discriminant Analysis", "Combined Model", "Actual Values")
+predictions<-data.frame(summary(pred_rft),
+                        summary(pred_ct),
+                        summary(pred_lda),
+                        summary(pred_combined),
+                        summary(intesting$classe))
+colnames(predictions)<-names
+print(predictions)
+```
+
+We can see that the Random Forest model and the combined model results are close to the original values. Let's verify this by checking the accuracy of the four models:
+```{r}
+accuracy<-data.frame(confusionMatrix(pred_rft, intesting$classe)$overall[1],
+                     confusionMatrix(pred_ct, intesting$classe)$overall[1],
+                     confusionMatrix(pred_lda, intesting$classe)$overall[1],
+                     confusionMatrix(pred_combined, intesting$classe)$overall[1])
+colnames(accuracy)<-names[-5]
+print(accuracy)
+```
+
+We can see that the Random Forest model and the combined (stacked) model have very high accuraccy.
+
+Random Forest has the highest accuracy/lowest out of sample error;
+the stacked model is more complicated and and has a (bit) lower accuracy.
+
+Prediction
+
+```{r}
+testing_final<-testing[,subss] # subsetting the data 
+ # verifying that the testing and final datasets have the same levels:
+for (i in 1:ncol(testing_final)){
+  levels(testing_final[,i])<-levels(dataset[,i])}
+finpred_rf<-predict(mod_rft, newdata = testing_final)
+print(finpred_rf)
+```
+
